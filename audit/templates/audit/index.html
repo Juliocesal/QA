@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <title>Auditoría SAP DAMAGE-BOX</title>
+    <style>
+        html, body { height: 100%; margin: 0; overflow: hidden; }
+        body { box-sizing: border-box; display: flex; flex-direction: column; padding: 8px; }
+        .table-scroll { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; }
+        .audit-table { table-layout: fixed; }
+        .audit-table th, .audit-table td { overflow-wrap: anywhere; }
+        .audit-table thead th { background: white; position: sticky; top: 0; z-index: 1; }
+        .scan-success { --scan-color: #8bea9f; --scan-border: #17752b; }
+        .scan-error { --scan-color: #ff9696; --scan-border: #a40000; }
+        .scan-warning { --scan-color: #ffe476; --scan-border: #9a7000; }
+        body.scan-success, body.scan-error, body.scan-warning { animation: scan-flash .16s linear 1; }
+        .scan-result { background: var(--scan-color, #eeeeee); border: 3px solid var(--scan-border, #555555); font-size: 24px; padding: 18px; }
+        @keyframes scan-flash { from { background: var(--scan-color); } to { background: white; } }
+    </style>
+</head>
+<body{% if flash %} class="scan-{{ flash }}"{% endif %}>
+    <h1>Auditoría SAP - DAMAGE-BOX</h1>
+
+    <table border="1" width="100%" cellpadding="8" cellspacing="0">
+        <tr>
+            <td width="35%">
+                <form id="scan-form" method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="scan">
+                    <label for="stock_id">Scan de Stock ID:</label><br>
+                    <input id="stock_id" name="stock_id" type="text" inputmode="numeric" autocomplete="off" autofocus required>
+                    <button type="submit">Registrar scan</button>
+                </form>
+            </td>
+            <td>
+                <form method="post" onsubmit="const button=this.querySelector('button[type=submit]'); button.disabled=true; button.textContent='Ejecutando SAP...';">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="start">
+                    <label for="from_date">Fecha inicial:</label>
+                    <input id="from_date" name="from_date" type="date" value="{{ from_date }}" required>
+                    <label for="to_date">Fecha final:</label>
+                    <input id="to_date" name="to_date" type="date" value="{{ to_date }}" required>
+                    <button type="submit">Iniciar auditoría</button>
+                </form>
+                <form method="post" onsubmit="return confirm('¿Reiniciar la auditoría? Se perderá el progreso actual.');">
+                    {% csrf_token %}
+                    <button type="submit" name="action" value="reset">Reset audit</button>
+                </form>
+            </td>
+        </tr>
+    </table>
+
+    <p id="scan-result"{% if not message %} hidden{% endif %}{% if flash %} class="scan-result scan-{{ flash }}"{% endif %} role="alert" aria-live="assertive"><strong id="scan-message">{{ message }}</strong></p>
+
+    <p>
+        Materiales/variantes: {{ rows|length }} |
+        Completos: <span id="completed-rows">{{ completed_rows }}</span> |
+        Bloqueados: {{ blocked_rows }} |
+        Unidades SAP: {{ total_units }} |
+        Escaneadas: <span id="scanned-units">{{ scanned_units }}</span> |
+        Pendientes: <span id="pending-units">{{ pending_units }}</span>
+    </p>
+
+    <div class="table-scroll">
+        <table class="audit-table" border="1" width="100%" cellpadding="5" cellspacing="0">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Material (MATNR)</th>
+                    <th>Grid / talla (J_3ASIZE)</th>
+                    <th>Stock ID (MEAN)</th>
+                    <th>Cantidad SAP</th>
+                    <th>Escaneadas</th>
+                    <th>Pendientes</th>
+                    <th>Estado</th>
+                    <th>Stock Category</th>
+                    <th>Usuario</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr data-audit-row="{{ forloop.counter0 }}">
+                        <td>{{ forloop.counter }}</td>
+                        <td>{{ row.material }}</td>
+                        <td>{{ row.grid_value }}</td>
+                        <td>{% if row.stock_ids %}{{ row.stock_ids|join:", " }}{% else %}NO ENCONTRADO{% endif %}</td>
+                        <td>{{ row.expected_qty }}</td>
+                        <td data-field="scanned">{{ row.scanned_qty }}</td>
+                        <td data-field="pending">{{ row.pending_qty }}</td>
+                        <td data-field="status">{{ row.status }}</td>
+                        <td>{{ row.stock_category }}</td>
+                        <td>{{ row.users|join:", " }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="10">Inicia una auditoría para cargar los materiales desde SAP.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if rows %}
+    <script>
+        (() => {
+            const form = document.getElementById("scan-form");
+            const scanner = document.getElementById("stock_id");
+            const result = document.getElementById("scan-result");
+            const message = document.getElementById("scan-message");
+            const flashClasses = ["scan-success", "scan-error", "scan-warning"];
+            let queue = Promise.resolve();
+            let flashTimer;
+            const keepScannerFocused = () => scanner.focus({ preventScroll: true });
+            const showResult = (data) => {
+                clearTimeout(flashTimer);
+                document.body.classList.remove(...flashClasses);
+                result.className = `scan-result scan-${data.flash}`;
+                message.textContent = data.message;
+                result.hidden = false;
+                void document.body.offsetWidth;
+                document.body.classList.add(`scan-${data.flash}`);
+                flashTimer = setTimeout(
+                    () => document.body.classList.remove(...flashClasses),
+                    160
+                );
+            };
+            const updateAudit = (data) => {
+                document.getElementById("completed-rows").textContent = data.completed_rows;
+                document.getElementById("scanned-units").textContent = data.scanned_units;
+                document.getElementById("pending-units").textContent = data.pending_units;
+                data.rows.forEach((row, index) => {
+                    const tableRow = document.querySelector(`[data-audit-row="${index}"]`);
+                    tableRow.querySelector('[data-field="scanned"]').textContent = row.scanned_qty;
+                    tableRow.querySelector('[data-field="pending"]').textContent = row.pending_qty;
+                    tableRow.querySelector('[data-field="status"]').textContent = row.status;
+                });
+            };
+            const sendScan = async (formData) => {
+                try {
+                    const response = await fetch(window.location.href, {
+                        method: "POST",
+                        body: formData,
+                        headers: { "X-Requested-With": "XMLHttpRequest" },
+                    });
+                    if (!response.ok) throw new Error();
+                    const data = await response.json();
+                    updateAudit(data);
+                    showResult(data);
+                } catch {
+                    showResult({ flash: "error", message: "ERROR — No se pudo registrar el escaneo." });
+                } finally {
+                    keepScannerFocused();
+                }
+            };
+
+            keepScannerFocused();
+            form.addEventListener("submit", (event) => {
+                event.preventDefault();
+                const formData = new FormData(form);
+                scanner.value = "";
+                queue = queue.then(() => sendScan(formData));
+                keepScannerFocused();
+            });
+            scanner.addEventListener("blur", () => setTimeout(keepScannerFocused, 0));
+            document.addEventListener("click", () => setTimeout(keepScannerFocused, 0));
+            document.addEventListener("scroll", keepScannerFocused, true);
+            window.addEventListener("focus", keepScannerFocused);
+            window.addEventListener("pageshow", keepScannerFocused);
+        })();
+    </script>
+    {% endif %}
+</body>
+</html>
