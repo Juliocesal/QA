@@ -10,10 +10,28 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def load_local_env(path):
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        os.environ.setdefault(key.strip(), value)
+
+
+load_local_env(BASE_DIR / ".env")
 
 
 # Quick-start development settings - unsuitable for production
@@ -27,6 +45,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 SESSION_COOKIE_NAME = 'damage_audit_sessionid'
+AUDIT_DELETE_PASSWORD = os.environ.get("AUDIT_DELETE_PASSWORD", "")
 
 
 # Application definition

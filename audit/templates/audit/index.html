@@ -20,6 +20,8 @@
 </head>
 <body{% if flash %} class="scan-{{ flash }}"{% endif %}>
     <h1>Auditoría SAP - DAMAGE-BOX</h1>
+    <p><a href="{% url 'audit-reports' %}">Ver historial de auditorías</a></p>
+    <p>Turno A: 06:00–17:59 | Turno B: 18:00–05:59 | Revisa el turno contrario.</p>
 
     <table border="1" width="100%" cellpadding="8" cellspacing="0">
         <tr>
@@ -46,6 +48,13 @@
                     {% csrf_token %}
                     <button type="submit" name="action" value="reset">Reset audit</button>
                 </form>
+                {% if audit_active %}
+                    <form id="finish-form" method="post" onsubmit="return confirm('¿Terminar y guardar esta auditoría?');">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="finish">
+                        <button type="submit">Terminar auditoría</button>
+                    </form>
+                {% endif %}
             </td>
         </tr>
     </table>
@@ -58,8 +67,10 @@
         Bloqueados: {{ blocked_rows }} |
         Unidades SAP: {{ total_units }} |
         Escaneadas: <span id="scanned-units">{{ scanned_units }}</span> |
-        Pendientes: <span id="pending-units">{{ pending_units }}</span>
+        Pendientes: <span id="pending-units">{{ pending_units }}</span> |
+        Escaneos de más: <span id="excess-units">{{ excess_units }}</span>
     </p>
+    <p>Avance: <progress id="audit-progress" value="{{ scanned_units }}" max="{{ total_units|default:1 }}"></progress> <span id="progress-percent">{{ progress_percent }}%</span></p>
 
     <div class="table-scroll">
         <table class="audit-table" border="1" width="100%" cellpadding="5" cellspacing="0">
@@ -72,9 +83,13 @@
                     <th>Cantidad SAP</th>
                     <th>Escaneadas</th>
                     <th>Pendientes</th>
+                    <th>De más</th>
                     <th>Estado</th>
                     <th>Stock Category</th>
                     <th>Usuario</th>
+                    <th>Conf. T. (QZEIT)</th>
+                    <th>Turno entrega</th>
+                    <th>Turno auditor</th>
                 </tr>
             </thead>
             <tbody>
@@ -87,12 +102,16 @@
                         <td>{{ row.expected_qty }}</td>
                         <td data-field="scanned">{{ row.scanned_qty }}</td>
                         <td data-field="pending">{{ row.pending_qty }}</td>
-                        <td data-field="status">{{ row.status }}</td>
+                        <td data-field="excess">{{ row.excess_qty }}</td>
+                        <td data-field="status">{{ row.status_indicator }} {{ row.status }}</td>
                         <td>{{ row.stock_category }}</td>
                         <td>{{ row.users|join:", " }}</td>
+                        <td>{{ row.confirmation_times|join:", "|default:"SIN HORA" }}</td>
+                        <td>{{ row.source_shift }}</td>
+                        <td>{{ row.review_shift }}</td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="10">Inicia una auditoría para cargar los materiales desde SAP.</td></tr>
+                    <tr><td colspan="14">Inicia una auditoría para cargar los materiales desde SAP.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -126,11 +145,17 @@
                 document.getElementById("completed-rows").textContent = data.completed_rows;
                 document.getElementById("scanned-units").textContent = data.scanned_units;
                 document.getElementById("pending-units").textContent = data.pending_units;
+                document.getElementById("excess-units").textContent = data.excess_units;
+                const progress = document.getElementById("audit-progress");
+                progress.max = Math.max(data.total_units, 1);
+                progress.value = data.scanned_units;
+                document.getElementById("progress-percent").textContent = `${data.progress_percent}%`;
                 data.rows.forEach((row, index) => {
                     const tableRow = document.querySelector(`[data-audit-row="${index}"]`);
                     tableRow.querySelector('[data-field="scanned"]').textContent = row.scanned_qty;
                     tableRow.querySelector('[data-field="pending"]').textContent = row.pending_qty;
-                    tableRow.querySelector('[data-field="status"]').textContent = row.status;
+                    tableRow.querySelector('[data-field="excess"]').textContent = row.excess_qty;
+                    tableRow.querySelector('[data-field="status"]').textContent = `${row.status_indicator} ${row.status}`;
                 });
             };
             const sendScan = async (formData) => {
@@ -145,7 +170,7 @@
                     updateAudit(data);
                     showResult(data);
                 } catch {
-                    showResult({ flash: "error", message: "ERROR — No se pudo registrar el escaneo." });
+                    showResult({ flash: "error", message: "RECHAZADO — No se pudo registrar el escaneo." });
                 } finally {
                     keepScannerFocused();
                 }
@@ -164,6 +189,17 @@
             document.addEventListener("scroll", keepScannerFocused, true);
             window.addEventListener("focus", keepScannerFocused);
             window.addEventListener("pageshow", keepScannerFocused);
+
+            const finishForm = document.getElementById("finish-form");
+            if (finishForm) {
+                finishForm.addEventListener("submit", (event) => {
+                    event.preventDefault();
+                    const button = finishForm.querySelector('button[type="submit"]');
+                    button.disabled = true;
+                    button.textContent = "Guardando auditoría...";
+                    queue.then(() => finishForm.submit());
+                });
+            }
         })();
     </script>
     {% endif %}

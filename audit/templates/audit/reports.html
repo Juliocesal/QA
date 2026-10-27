@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <title>Historial de auditorías</title>
+</head>
+<body>
+    <h1>Historial de auditorías DAMAGE-BOX</h1>
+    <p><a href="{% url 'audit' %}">Volver a auditoría</a></p>
+    {% if messages %}
+        <ul role="alert">
+            {% for message in messages %}<li>{{ message }}</li>{% endfor %}
+        </ul>
+    {% endif %}
+
+    <table border="1" cellpadding="5" cellspacing="0">
+        <thead>
+            <tr>
+                <th>Estado</th>
+                <th>Iniciada</th>
+                <th>Finalizada</th>
+                <th>Fechas SAP</th>
+                <th>Turno entregado</th>
+                <th>Turno auditor</th>
+                <th>Unidades SAP</th>
+                <th>Escaneadas</th>
+                <th>Faltantes</th>
+                <th>Escaneos de más</th>
+                <th>Detalle</th>
+                <th>Eliminar</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for report in reports %}
+                <tr>
+                    <td>{{ report.get_status_display }}</td>
+                    <td>{{ report.started_at|date:"d/m/Y H:i:s" }}</td>
+                    <td>{% if report.finished_at %}{{ report.finished_at|date:"d/m/Y H:i:s" }}{% else %}—{% endif %}</td>
+                    <td>{{ report.from_date|date:"d/m/Y" }} – {{ report.to_date|date:"d/m/Y" }}</td>
+                    <td>{{ report.source_shift|default:"—" }}</td>
+                    <td>{{ report.review_shift|default:"—" }}</td>
+                    <td>{{ report.total_units }}</td>
+                    <td>{{ report.scanned_units }}</td>
+                    <td>{{ report.missing_units }}</td>
+                    <td>{{ report.excess_units }}</td>
+                    <td><a href="{% url 'audit-report' report.pk %}">Abrir</a></td>
+                    <td>
+                        <form method="post" action="{% url 'audit-delete' report.pk %}" onsubmit="return confirm('¿Eliminar permanentemente esta auditoría?');">
+                            {% csrf_token %}
+                            <label>Contraseña: <input type="password" name="password" autocomplete="new-password" required></label>
+                            <button type="submit">Borrar</button>
+                        </form>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="12">Aún no hay auditorías registradas.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

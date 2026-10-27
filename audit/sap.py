@@ -9,7 +9,7 @@ class SapError(Exception):
     pass
 
 
-def get_sap_rows(from_date, to_date):
+def get_sap_rows(from_date, to_date, source_shift="ALL"):
     script = Path(__file__).with_name("sap_export.vbs")
     command = [
         "cscript.exe",
@@ -17,6 +17,7 @@ def get_sap_rows(from_date, to_date):
         str(script),
         from_date.strftime("%Y%m%d"),
         to_date.strftime("%Y%m%d"),
+        source_shift,
     ]
 
     try:
@@ -43,8 +44,14 @@ def get_sap_rows(from_date, to_date):
             continue
 
         parts = [value.strip() for value in line.split("\t")]
-        if len(parts) == 6 and parts[0] == "LTAP":
-            _, material, grid_value, stock_category, user, quantity = parts
+        if parts[0] == "ERROR":
+            raise SapError("\t".join(parts[1:]) or "La automatización SAP reportó un error.")
+        if parts[0] == "LTAP" and len(parts) in (6, 7):
+            if len(parts) == 7:
+                _, material, grid_value, stock_category, user, quantity, confirmation_time = parts
+            else:
+                _, material, grid_value, stock_category, user, quantity = parts
+                confirmation_time = ""
             rows.append(
                 {
                     "material": material,
@@ -52,6 +59,7 @@ def get_sap_rows(from_date, to_date):
                     "stock_category": stock_category,
                     "user": user,
                     "quantity": parse_quantity(quantity),
+                    "confirmation_time": normalize_confirmation_time(confirmation_time),
                 }
             )
         elif len(parts) == 5 and parts[0] == "MEAN":
@@ -75,6 +83,15 @@ def get_sap_rows(from_date, to_date):
 def normalize_stock_id(value):
     value = value.strip()
     return f"00{value}" if value.startswith("200") else value
+
+
+def normalize_confirmation_time(value):
+    digits = re.sub(r"\D", "", value)
+    if len(digits) == 6:
+        return f"{digits[:2]}:{digits[2:4]}:{digits[4:]}"
+    if len(digits) == 4:
+        return f"{digits[:2]}:{digits[2:]}:00"
+    return value.strip()
 
 
 def stock_category_code(value):

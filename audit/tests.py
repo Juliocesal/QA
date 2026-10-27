@@ -28,7 +28,7 @@ class AuditViewTests(TestCase):
 
         response = Client().post("/", {"action": "scan", "stock_id": "00200269247493"})
 
-        self.assertContains(response, "ACEPTADO — MAT-1 — 2/2")
+        self.assertContains(response, "ACEPTADO — 7493 — 2/2")
 
     @patch("audit.views.get_sap_rows")
     def test_loads_sap_rows_and_registers_scan(self, get_sap_rows):
@@ -62,7 +62,7 @@ class AuditViewTests(TestCase):
         self.assertContains(response, "queue = queue.then")
 
         response = self.client.post("/", {"action": "scan", "stock_id": "ABC!"})
-        self.assertContains(response, "sólo puede contener números")
+        self.assertContains(response, "RECHAZADO — El Stock ID sólo puede contener números")
         self.assertContains(response, "scan-error")
 
         response = self.client.post(
@@ -70,7 +70,7 @@ class AuditViewTests(TestCase):
             {"action": "scan", "stock_id": "00200269247493"},
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
-        self.assertEqual(response.json()["message"], "ACEPTADO — MAT-1 — 1/3")
+        self.assertEqual(response.json()["message"], "ACEPTADO — 7493 — 1/3")
         self.assertEqual(response.json()["flash"], "success")
         self.assertEqual(response.json()["rows"][0]["status"], "PARCIAL")
 
@@ -80,8 +80,8 @@ class AuditViewTests(TestCase):
         self.assertContains(response, "COMPLETO")
 
         response = self.client.post("/", {"action": "scan", "stock_id": "00200269247493"})
-        self.assertContains(response, "EXCEDENTE")
-        self.assertContains(response, "Esta pieza no se sumó")
+        self.assertContains(response, "AMARILLO — 7493 — EXCESO")
+        self.assertContains(response, "No se sumó")
         self.assertContains(response, "scan-warning")
         self.assertEqual(self.client.session["audit_rows"][0]["scanned_qty"], 3)
 

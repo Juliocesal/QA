@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <title>Reporte de auditoría DAMAGE-BOX</title>
+</head>
+<body>
+    <h1>Reporte de auditoría DAMAGE-BOX</h1>
+    <p>
+        Estado: {{ report.get_status_display }} |
+        Iniciada: {{ report.started_at|date:"d/m/Y H:i:s" }} |
+        {% if report.finished_at %}Terminada: {{ report.finished_at|date:"d/m/Y H:i:s" }} |{% endif %}
+        Fechas SAP: {{ report.from_date|date:"d/m/Y" }} – {{ report.to_date|date:"d/m/Y" }}
+    </p>
+    <p>Turno entregado: {{ report.source_shift|default:"—" }} | Turno auditor: {{ report.review_shift|default:"—" }}. Turno A: 06:00–17:59; turno B: 18:00–05:59.</p>
+    <p>
+        Unidades SAP: {{ report.total_units }} |
+        Escaneadas: {{ report.scanned_units }} |
+        Faltantes por escanear: {{ report.missing_units }} |
+        Escaneos de más: {{ report.excess_units }} |
+        Mapeos bloqueados: {{ report.blocked_rows }}
+    </p>
+    <p>Avance: <progress value="{{ report.scanned_units }}" max="{{ report.total_units|default:1 }}"></progress> {{ progress_percent }}%</p>
+    <p>
+        <a href="{% url 'audit-reports' %}">Volver al historial</a> |
+        <a href="{% url 'audit' %}">Nueva auditoría</a>
+    </p>
+
+    <table border="1" width="100%" cellpadding="5" cellspacing="0">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Material</th>
+                <th>Grid / talla</th>
+                <th>Stock ID</th>
+                <th>Cantidad SAP</th>
+                <th>Escaneadas</th>
+                <th>Faltantes</th>
+                <th>De más</th>
+                <th>Estado</th>
+                <th>Stock Category</th>
+                <th>Usuario SAP</th>
+                <th>Conf. T. (QZEIT)</th>
+                <th>Turno entrega</th>
+                <th>Turno auditor</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+                <tr>
+                    <td>{{ forloop.counter }}</td>
+                    <td>{{ row.material }}</td>
+                    <td>{{ row.grid_value }}</td>
+                    <td>{% if row.stock_ids %}{{ row.stock_ids|join:", " }}{% else %}NO ENCONTRADO{% endif %}</td>
+                    <td>{{ row.expected_qty }}</td>
+                    <td>{{ row.scanned_qty }}</td>
+                    <td>{{ row.pending_qty }}</td>
+                    <td>{{ row.excess_qty }}</td>
+                    <td>{{ row.status_indicator }} {{ row.status }}</td>
+                    <td>{{ row.stock_category }}</td>
+                    <td>{{ row.users|join:", " }}</td>
+                    <td>{{ row.confirmation_times|join:", "|default:"SIN HORA" }}</td>
+                    <td>{{ row.source_shift }}</td>
+                    <td>{{ row.review_shift }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="14">SAP no devolvió materiales para estas fechas.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
